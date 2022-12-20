@@ -1969,6 +1969,7 @@ set(MSW_LOWLEVEL_SRC
     src/msw/evtloop.cpp
     src/msw/ole/access.cpp
     src/msw/bmpbndl.cpp
+    src/msw/overlay.cpp
 )
 
 set(MSW_LOWLEVEL_HDR
