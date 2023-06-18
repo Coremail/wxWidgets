@@ -1066,7 +1066,6 @@ void wxRibbonButtonBar::MakeLayouts()
         //               small buttons small, stacked vertically
         wxRibbonButtonBarLayout* layout = new wxRibbonButtonBarLayout;
         wxPoint cursor(0, 0);
-        layout->overall_size.SetHeight(0);
         for(btn_i = 0; btn_i < btn_count; ++btn_i)
         {
             wxRibbonButtonBarButtonBase* button = m_buttons.Item(btn_i);
@@ -1102,8 +1101,7 @@ void wxRibbonButtonBar::MakeLayouts()
             }
             layout->buttons.Add(instance);
         }
-        layout->overall_size.SetHeight(available_height);
-        layout->overall_size.SetWidth(cursor.x + stacked_width);
+        layout->CalculateOverallSize();
         m_layouts.Add(layout);
     }
     if(btn_count >= 2)
