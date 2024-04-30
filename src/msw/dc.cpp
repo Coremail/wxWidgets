@@ -2935,52 +2935,17 @@ static bool AlphaBlt(wxMSWDCImpl* dcDst,
     const wxBitmap& bmpDst = dcDst->GetSelectedBitmap();
     if ( bmpDst.IsOk() && !bmpDst.HasAlpha() && bmpDst.GetDepth() == 32 )
     {
-        // We need to deselect the bitmap from the memory DC it is
-        // currently selected into before modifying it.
-        wxBitmap bmpOld = bmpDst;
-        dcDst->DoSelect(wxNullBitmap);
+        wxBitmap bmp(dstWidth, dstHeight, 32);
+        wxMemoryDC dc(bmp);
 
-        // Notice the extra block: we must destroy wxAlphaPixelData
-        // before selecting the bitmap into the DC again.
-        {
-            // Since drawn bitmap can only partially overlap
-            // with destination bitmap we need to calculate
-            // efective drawing area location.
-            const wxRect rectDst(bmpOld.GetSize());
-            const wxRect rectDrawn(x, y, dstWidth, dstHeight);
-            const wxRect r = rectDrawn.Intersect(rectDst);
-
-            wxAlphaPixelData data(bmpOld);
-            if ( data )
-            {
-                wxAlphaPixelData::Iterator p(data);
-
-                p.Offset(data, r.GetLeft(), r.GetTop());
-                for ( int old_y = 0; old_y < r.GetHeight(); old_y++ )
-                {
-                    wxAlphaPixelData::Iterator rowStart = p;
-                    for ( int old_x = 0; old_x < r.GetWidth(); old_x++ )
-                    {
-                        // We choose to use wxALPHA_TRANSPARENT instead
-                        // of perhaps more logical wxALPHA_OPAQUE here
-                        // to ensure that the bitmap remains the same
-                        // as before, i.e. without any alpha at all.
-                        p.Alpha() = wxALPHA_TRANSPARENT;
-                        ++p;
-                    }
-
-                    p = rowStart;
-                    p.OffsetY(data, 1);
-                }
-            }
-        }
-
-        // Using wxAlphaPixelData sets the internal "has alpha" flag
-        // which is usually what we need, but in this particular case
-        // we use it to get rid of alpha, not set it, so reset it back.
-        bmpOld.ResetAlpha();
-
-        dcDst->DoSelect(bmpOld);
+        // Fetch the content of the destination area into the temporary buffer.
+        wxRect r(x, y, dstWidth, dstHeight);
+        if (bmpDst.GetWidth() < x + dstWidth || bmpDst.GetHeight() < y + dstHeight)
+            return true;
+        dc.DrawBitmap(dcDst->DoGetAsBitmap(&r), 0, 0);
+        // Drawing the source over the temporary buffer.
+        dcDst->DoBlit(x, y, dstWidth, dstHeight, &dc, 0, 0);
+        return true;
     }
 #endif // wxHAS_RAW_BITMAP
 
