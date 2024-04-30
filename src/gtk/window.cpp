@@ -2330,7 +2330,7 @@ wxGTKImpl::WindowLeaveCallback(GtkWidget* widget,
         win->GTKUpdateCursor();
 
     // Event was emitted after an ungrab
-    if (gdk_event->mode != GDK_CROSSING_NORMAL)
+    if (gdk_event->mode != GDK_CROSSING_NORMAL && gdk_event->mode != GDK_CROSSING_GRAB && gdk_event->mode != GDK_CROSSING_GTK_GRAB)
     {
         wxLogTrace(TRACE_MOUSE, "Ignore event with mode %d", gdk_event->mode);
         return FALSE;
