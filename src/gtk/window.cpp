@@ -72,6 +72,10 @@ typedef guint KeySym;
     #define PANGO_VERSION_CHECK(a,b,c) 0
 #endif
 
+namespace CMExtension {
+    bool g_need_traditional_scrollbar = false;
+}
+
 constexpr const char* TRACE_MOUSE = "mouse";
 
 //-----------------------------------------------------------------------------
@@ -2838,6 +2842,9 @@ void wxWindowGTK::GTKCreateScrolledWindowWith(GtkWidget* view)
     m_widget = gtk_scrolled_window_new( nullptr, nullptr );
 
     GtkScrolledWindow *scrolledWindow = GTK_SCROLLED_WINDOW(m_widget);
+	
+    if (CMExtension::g_need_traditional_scrollbar)
+        g_object_set(scrolledWindow, "overlay-scrolling", false, NULL);
 
     // There is a conflict with default bindings at GTK+
     // level between scrolled windows and notebooks both of which want to use

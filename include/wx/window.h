@@ -49,6 +49,12 @@
     #define wxUSE_MENUS_NATIVE wxUSE_MENUS
 #endif // __WXUNIVERSAL__/!__WXUNIVERSAL__
 
+#ifdef __WXGTK__
+namespace CMExtension {
+    extern bool g_need_traditional_scrollbar;
+}
+#endif
+
 // ----------------------------------------------------------------------------
 // forward declarations
 // ----------------------------------------------------------------------------
