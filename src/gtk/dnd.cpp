@@ -852,13 +852,11 @@ wxDragResult wxDropSource::DoDragDrop(int flags)
     if (g_blockEventsOnDrag)
         return wxDragNone;
 
+#if 0 // behaves bad for Coremail Air Client, need to investigate whether the early exiting is correct
     // don't start dragging if no button is down
     if (g_lastButtonNumber == 0)
         return wxDragNone;
-
-    // we can only start a drag after a mouse event
-    if (g_lastMouseEvent == NULL)
-        return wxDragNone;
+#endif
 
     GTKConnectDragSignals();
     wxON_BLOCK_EXIT_OBJ0(*this, wxDropSource::GTKDisconnectDragSignals);
