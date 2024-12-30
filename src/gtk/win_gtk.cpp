@@ -10,6 +10,7 @@
 
 #include "wx/gtk/private.h"
 #include "wx/gtk/private/win_gtk.h"
+#include "wx/gtk/private/debughlp.h"
 
 /*
 wxPizza is a custom GTK+ widget derived from GtkFixed.  A custom widget
@@ -86,6 +87,10 @@ static void pizza_size_allocate(GtkWidget* widget, GtkAllocation* alloc)
                 GtkAllocation old_alloc;
                 gtk_widget_get_allocation(widget, &old_alloc);
                 GdkWindow* parent = gtk_widget_get_parent_window(widget);
+                DO_GTK_DEBUG_LOG("pizza_size_allocate() Call gdk_window_invalidate_rect(%p, rect(%d, %d, %d, %d), false)(old_alloc).\n", 
+                        parent, old_alloc.x, old_alloc.y, old_alloc.width, old_alloc.height);
+                DO_GTK_DEBUG_LOG("pizza_size_allocate() Call gdk_window_invalidate_rect(%p, rect(%d, %d, %d, %d), false)(alloc).\n", 
+                        parent, alloc->x, alloc->y, alloc->width, alloc->height);
                 gdk_window_invalidate_rect(parent, &old_alloc, false);
                 gdk_window_invalidate_rect(parent, alloc, false);
             }
@@ -135,6 +140,7 @@ static void pizza_show(GtkWidget* widget)
         // invalidate whole allocation so borders will be drawn properly
         GtkAllocation a;
         gtk_widget_get_allocation(widget, &a);
+        DO_GTK_DEBUG_LOG("pizza_show() Call gtk_widget_queue_draw_area(%p, rect(%d, %d, %d, %d)).\n", parent, a.x, a.y, a.width, a.height);
         gtk_widget_queue_draw_area(parent, a.x, a.y, a.width, a.height);
     }
 
@@ -149,6 +155,7 @@ static void pizza_hide(GtkWidget* widget)
         // invalidate whole allocation so borders will be erased properly
         GtkAllocation a;
         gtk_widget_get_allocation(widget, &a);
+        DO_GTK_DEBUG_LOG("pizza_hide() Call gtk_widget_queue_draw_area(%p, rect(%d, %d, %d, %d)).\n", parent, a.x, a.y, a.width, a.height);
         gtk_widget_queue_draw_area(parent, a.x, a.y, a.width, a.height);
     }
 

@@ -46,6 +46,7 @@
 #include "wx/gtk/private/win_gtk.h"
 #include "wx/gtk/private/backend.h"
 #include "wx/private/textmeasure.h"
+#include "wx/gtk/private/debughlp.h"
 using namespace wxGTKImpl;
 
 #ifdef GDK_WINDOWING_X11
@@ -522,11 +523,15 @@ bool wxGTKImpl::IsX11(void* instance)
 
 extern "C" {
 #ifdef __WXGTK3__
-static gboolean draw(GtkWidget*, cairo_t* cr, wxWindow* win)
+static gboolean draw(GtkWidget* gtk_widget, cairo_t* cr, wxWindow* win)
 {
-    if (gtk_cairo_should_draw_window(cr, win->GTKGetDrawingWindow()))
+    DO_GTK_DEBUG_LOG("Gtk \"draw\" signal called for %p. wxWin %p\n", gtk_widget, win);
+    if (gtk_cairo_should_draw_window(cr, win->GTKGetDrawingWindow())){
+        DO_GTK_DEBUG_LOG("gtk_cairo_should_draw_window is ok called for %p. wxWin %p.\n", gtk_widget, win);
         win->GTKSendPaintEvents(cr);
-
+    }
+    else 
+        DO_GTK_DEBUG_LOG("gtk_cairo_should_draw_window is NOT ok called for %p. wxWin %p.\n", gtk_widget, win);
     return false;
 }
 #else // !__WXGTK3__
@@ -5321,20 +5326,33 @@ void wxWindowGTK::Refresh(bool WXUNUSED(eraseBackground),
                 GdkRectangle r = { rect->x, rect->y, rect->width, rect->height };
                 if (GetLayoutDirection() == wxLayout_RightToLeft)
                     r.x = gdk_window_get_width(window) - r.x - rect->width;
+                DO_GTK_DEBUG_LOG("wxWindowGTK::Refresh() Call gdk_window_invalidate_rect(%p, rect(%d, %d, %d, %d), true). m_wxwindow:%p, m_widget:%p\n", window, r.x, r.y, r.width, r.height, m_wxwindow, m_widget);
                 gdk_window_invalidate_rect(window, &r, true);
             }
-            else
+            else{
+                DO_GTK_DEBUG_LOG("wxWindowGTK::Refresh() Call gdk_window_invalidate_rect(%p, NULL_RECT, true). m_wxwindow:%p, m_widget:%p\n", window, m_wxwindow, m_widget);
                 gdk_window_invalidate_rect(window, NULL, true);
+            }
+        }
+        else {
+            DO_GTK_DEBUG_LOG("wxWindowGTK::Refresh() The m_wxwindow %p is NOT yet mapped, Skip. m_wxwindow:%p, m_widget:%p\n", m_wxwindow, m_wxwindow, m_widget);
         }
     }
     else if (m_widget)
     {
         if (gtk_widget_get_mapped(m_widget))
         {
-            if (rect)
+            if (rect){
+                DO_GTK_DEBUG_LOG("wxWindowGTK::Refresh() Call gtk_widget_queue_draw_area(%p, rect(%d, %d, %d, %d)). m_wxwindow:%p, m_widget:%p\n", m_widget, rect->x, rect->y, rect->width, rect->height, m_wxwindow, m_widget);
                 gtk_widget_queue_draw_area(m_widget, rect->x, rect->y, rect->width, rect->height);
-            else
+            }
+            else {
+                DO_GTK_DEBUG_LOG("wxWindowGTK::Refresh() Call gtk_widget_queue_draw(%p). m_wxwindow:%p, m_widget:%p\n", m_widget, m_wxwindow, m_widget);
                 gtk_widget_queue_draw(m_widget);
+            }
+        }
+        else {
+            DO_GTK_DEBUG_LOG("wxWindowGTK::Refresh() The m_widget %p is NOT yet mapped, Skip. m_wxwindow:%p, m_widget:%p\n", m_widget, m_wxwindow, m_widget);
         }
     }
 }
@@ -6689,6 +6707,7 @@ void wxWindowGTK::GTKFreezeWidget(GtkWidget* widget)
 void wxWindowGTK::GTKThawWidget(GtkWidget* widget)
 {
     g_signal_handlers_block_by_func(widget, (void*)draw_freeze, this);
+    DO_GTK_DEBUG_LOG("wxWindowGTK::GTKThawWidget() Call gtk_widget_queue_draw(%p).\n", widget);
     gtk_widget_queue_draw(widget);
 }
 

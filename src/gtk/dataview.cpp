@@ -1920,6 +1920,8 @@ bool wxGtkDataViewModelNotifier::ValueChanged( const wxDataViewItem &item, unsig
                     gtk_widget_get_allocation(GTK_WIDGET(gtk_tree_view_column_get_button(gcolumn)), &a);
                     int ydiff = a.height;
                     // Redraw
+                    DO_GTK_DEBUG_LOG("wxGtkDataViewModelNotifier::ValueChanged:Call gtk_widget_queue_draw_area(%p, rect(%d, %d, %d, %d)).\n",
+                               GTK_WIDGET(widget), cell_area.x - xdiff, ydiff + cell_area.y, cell_area.width, cell_area.height);
                     gtk_widget_queue_draw_area( GTK_WIDGET(widget),
                         cell_area.x - xdiff, ydiff + cell_area.y, cell_area.width, cell_area.height );
                 }
@@ -3748,6 +3750,7 @@ void wxDataViewCtrlInternal::OnInternalIdle()
     if (m_dirty)
     {
         GtkWidget *widget = m_owner->GtkGetTreeView();
+        DO_GTK_DEBUG_LOG("wxDataViewCtrlInternal::OnInternalIdle() Call gtk_widget_queue_draw(%p).\n", widget);
         gtk_widget_queue_draw( widget );
         m_dirty = false;
     }

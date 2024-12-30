@@ -1317,6 +1317,7 @@ set(GTK_LOWLEVEL_SRC
     src/gtk/utilsgtk.cpp
     src/gtk/win_gtk.cpp
     src/gtk/window.cpp
+	src/gtk/debughlp.cpp
 )
 
 set(GTK2_LOWLEVEL_SRC

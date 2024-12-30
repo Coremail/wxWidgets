@@ -15,6 +15,7 @@
 #include "wx/window.h"
 #include "wx/gtk/private/wrapgtk.h"
 #include "wx/gtk/private/backend.h"
+#include "wx/gtk/private/debughlp.h"
 
 class wxOverlayImpl: public wxOverlay::Impl
 {
@@ -185,6 +186,7 @@ void wxOverlayImpl::EndDrawing(wxDC* dc)
         cairo_surface_destroy(m_surface);
         m_surface = surface;
     }
+    DO_GTK_DEBUG_LOG("wxOverlayImpl::EndDrawing() Call gtk_widget_queue_draw(%p).\n", m_overlay);
     gtk_widget_queue_draw(m_overlay);
 }
 

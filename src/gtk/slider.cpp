@@ -20,6 +20,7 @@
 
 #include "wx/gtk/private/wrapgtk.h"
 #include "wx/gtk/private/eventsdisabler.h"
+#include "wx/gtk/private/debughlp.h"
 
 //-----------------------------------------------------------------------------
 // data
@@ -432,6 +433,7 @@ void wxSlider::GTKSetValue(int value)
 
     gtk_range_set_value(GTK_RANGE (m_scale), value);
     // GTK only updates value label if handle moves at least 1 pixel
+    DO_GTK_DEBUG_LOG("wxSlider::GTKSetValue() Call gtk_widget_queue_draw(%p).\n", m_scale);
     gtk_widget_queue_draw(m_scale);
 }
 

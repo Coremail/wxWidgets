@@ -39,6 +39,7 @@
 #include "wx/gtk/private/stylecontext.h"
 #include "wx/gtk/private/win_gtk.h"
 #include "wx/gtk/private/backend.h"
+#include "wx/gtk/private/debughlp.h"
 
 #ifdef GDK_WINDOWING_X11
     #include <gdk/gdkx.h>
@@ -1040,14 +1041,17 @@ bool wxTopLevelWindowGTK::ShowFullScreen(bool show, long)
 void wxTopLevelWindowGTK::Refresh( bool WXUNUSED(eraseBackground), const wxRect *WXUNUSED(rect) )
 {
     wxCHECK_RET( m_widget, wxT("invalid frame") );
-
+	
+    DO_GTK_DEBUG_LOG("wxTopLevelWindowGTK::Refresh() Call gtk_widget_queue_draw(%p).\n", m_widget);
     gtk_widget_queue_draw( m_widget );
 
     GdkWindow* window = NULL;
     if (m_wxwindow)
         window = gtk_widget_get_window(m_wxwindow);
-    if (window)
+    if (window){
+        DO_GTK_DEBUG_LOG("wxTopLevelWindowGTK::Refresh() Call gdk_window_invalidate_rect(%p, NULL_RECT, true).\n", window);
         gdk_window_invalidate_rect(window, NULL, true);
+	}
 }
 
 #if defined(__WXGTK3__) && defined(GDK_WINDOWING_X11)

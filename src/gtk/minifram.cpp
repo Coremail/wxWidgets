@@ -27,6 +27,7 @@
 #include "wx/gtk/private/wrapgtk.h"
 #include "wx/gtk/private/gtk3-compat.h"
 #include "wx/gtk/private/backend.h"
+#include "wx/gtk/private/debughlp.h"
 
 //-----------------------------------------------------------------------------
 // data
@@ -456,8 +457,10 @@ void wxMiniFrame::SetTitle( const wxString &title )
     wxFrame::SetTitle( title );
 
     GdkWindow* window = gtk_widget_get_window(gtk_bin_get_child(GTK_BIN(m_widget)));
-    if (window)
+    if (window){
+        DO_GTK_DEBUG_LOG("wxMiniFrame::SetTitle() Call gdk_window_invalidate_rect(%p, NULL_RECT, false).\n", window);
         gdk_window_invalidate_rect(window, NULL, false);
+	}
 }
 
 #endif // wxUSE_MINIFRAME

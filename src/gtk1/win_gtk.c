@@ -219,6 +219,7 @@ gtk_pizza_set_shadow_type (GtkPizza        *pizza,
         if (GTK_WIDGET_VISIBLE (pizza))
         {
             gtk_widget_size_allocate (GTK_WIDGET (pizza), &(GTK_WIDGET (pizza)->allocation));
+            DO_GTK_DEBUG_LOG("gtk_pizza_set_shadow_type() Call gtk_widget_queue_draw(%p).\n", GTK_WIDGET (pizza));
             gtk_widget_queue_draw (GTK_WIDGET (pizza));
         }
     }

@@ -455,6 +455,7 @@ void wxGLCanvasEGL::OnWLFrameCallback()
     m_readyToDraw = true;
     g_clear_pointer(&m_wlFrameCallbackHandler, wl_callback_destroy);
     SendSizeEvent();
+    DO_GTK_DEBUG_LOG("wxGLCanvasEGL::OnWLFrameCallback() Call gtk_widget_queue_draw(%p).\n", m_wxwindow);
     gtk_widget_queue_draw(m_wxwindow);
 #endif // GDK_WINDOWING_WAYLAND
 }

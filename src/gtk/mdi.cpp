@@ -19,6 +19,7 @@
 #endif
 
 #include "wx/gtk/private.h"
+#include "wx/gtk/private/debughlp.h"
 
 //-----------------------------------------------------------------------------
 // "switch_page"
@@ -289,8 +290,10 @@ wxMDIChildFrame::~wxMDIChildFrame()
     delete m_menuBar;
 
     // wxMDIClientWindow does not get redrawn properly after last child is removed
-    if (m_parent && m_parent->GetChildren().size() <= 1)
+    if (m_parent && m_parent->GetChildren().size() <= 1){
+        DO_GTK_DEBUG_LOG("wxMDIChildFrame::~wxMDIChildFrame() Call gtk_widget_queue_draw(%p).\n", m_parent->m_widget);
         gtk_widget_queue_draw(m_parent->m_widget);
+	}
 }
 
 void wxMDIChildFrame::GTKHandleRealized()
