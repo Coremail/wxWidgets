@@ -9,9 +9,9 @@ bool wxGtkDebugLog(const char* format, const char* function_name, int line_num, 
     clock_gettime(CLOCK_REALTIME, &nano_now);
     if (logfile_ != nullptr){
         va_list argptr;
-        va_start(argptr,line_num);
-        fprintf(logfile_, "PreciseTime:%ld,%ld. ", nano_now.tv_sec, nano_now.tv_nsec);
-        fprintf(logfile_, format, src_file, line_num, function_name, argptr);
+        va_start(argptr, src_file);
+        fprintf(logfile_, "PreciseTime:%ld,%ld. %s:%d:%s--->", nano_now.tv_sec, nano_now.tv_nsec, src_file, line_num, function_name);
+        vfprintf(logfile_, format, argptr);
         va_end(argptr);
         std::fclose(logfile_);
         return true;
