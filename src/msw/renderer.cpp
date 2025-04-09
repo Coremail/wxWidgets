@@ -692,25 +692,17 @@ wxRendererXP::DrawHeaderButton(wxWindow *win,
     }
 
     wxCHECK_MSG( dc.GetImpl(), -1, wxT("Invalid wxDC") );
-
-    RECT r = ConvertToRECT(dc, rect);
-
-    int state;
-    if ( flags & wxCONTROL_PRESSED )
-        state = HIS_PRESSED;
-    else if ( flags & wxCONTROL_CURRENT )
-        state = HIS_HOT;
-    else
-        state = HIS_NORMAL;
-    ::DrawThemeBackground
-                            (
-                                hTheme,
-                                GetHdcOf(dc.GetTempHDC()),
-                                HP_HEADERITEM,
-                                state,
-                                &r,
-                                NULL
-                            );
+	
+    auto frame_bkg_color = win->GetBackgroundColour();
+    auto bk_brush = wxBrush{ frame_bkg_color };
+    dc.SetBrush(bk_brush);
+    dc.SetPen(*wxTRANSPARENT_PEN);
+    dc.DrawRectangle(rect);
+    dc.SetPen(*wxLIGHT_GREY_PEN);
+    dc.DrawLine(rect.GetLeftTop(), rect.GetLeftBottom());
+	
+    if (params != nullptr)
+        params->m_labelColour = win->GetForegroundColour();
 
     // NOTE: Using the theme to draw HP_HEADERSORTARROW doesn't do anything.
     // Why?  If this can be fixed then draw the sort arrows using the theme

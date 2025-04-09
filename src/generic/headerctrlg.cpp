@@ -411,9 +411,16 @@ void wxHeaderCtrl::UpdateReorderingMarker(int xPhysical)
     wxDCOverlay dcover(m_overlay, &dc);
     dcover.Clear();
 
-    dc.SetPen(*wxBLUE);
-    dc.SetBrush(*wxTRANSPARENT_BRUSH);
-
+    static const auto g_light_cyan_pen = wxPen{ wxColour{208, 226, 249} };
+    static const auto g_light_cyan_brush = wxBrush{ wxColour{208, 226, 249} };
+    if (wxSystemSettings::GetAppearance().IsDark()) {
+        dc.SetPen(g_light_cyan_pen);
+        dc.SetBrush(*wxTRANSPARENT_BRUSH);
+    }
+    else {
+        dc.SetPen(*wxBLUE);
+        dc.SetBrush(*wxTRANSPARENT_BRUSH);
+    }
     // draw the phantom position of the column being dragged
     int x = xPhysical - m_dragOffset;
     int y = GetClientSize().y;
@@ -428,7 +435,10 @@ void wxHeaderCtrl::UpdateReorderingMarker(int xPhysical)
     {
         static const int DROP_MARKER_WIDTH = 4;
 
-        dc.SetBrush(*wxBLUE);
+        if (wxSystemSettings::GetAppearance().IsDark())
+            dc.SetBrush(g_light_cyan_brush);
+        else
+            dc.SetBrush(*wxBLUE);
 		if (hover_region == Region::LeftHalf){
             dc.DrawRectangle(GetColStart(col) - DROP_MARKER_WIDTH/2, 0,
                         DROP_MARKER_WIDTH, y);
