@@ -232,7 +232,7 @@ unsigned int wxHeaderCtrl::FindColumnAfter(const unsigned int column_idx) const{
     //auto target_column_found = false;
     for ( unsigned n = 0; n < count; n++ )
     {
-        if (m_colIndices[n] == column_idx && n + 1 < count ){
+        if (static_cast<unsigned>(m_colIndices[n]) == column_idx && n + 1 < count ){
             after_idx = m_colIndices[n + 1];
             break;
         }
@@ -246,13 +246,13 @@ unsigned int wxHeaderCtrl::FindColumnBefore(const unsigned int column_idx) const
     auto target_column_found = false;
     for ( unsigned n = 0; n < count; n++ )
     {
-        if (m_colIndices[n] == column_idx){
+        if (static_cast<unsigned>(m_colIndices[n]) == column_idx){
             target_column_found = true;
             break;
         }
         before_idx = m_colIndices[n];
     }
-    if (not target_column_found)
+    if (!target_column_found)
         before_idx = COL_NONE;
     return before_idx;
 }
@@ -404,6 +404,8 @@ void wxHeaderCtrl::EndResizing(int xPhysical)
     m_colBeingResized = COL_NONE;
 }
 
+wxColor  wxHeaderCtrl::g_clDarkModeDragBorder;
+
 void wxHeaderCtrl::UpdateReorderingMarker(int xPhysical)
 {
     wxClientDC dc(this);
@@ -411,10 +413,8 @@ void wxHeaderCtrl::UpdateReorderingMarker(int xPhysical)
     wxDCOverlay dcover(m_overlay, &dc);
     dcover.Clear();
 
-    static const auto g_light_cyan_pen = wxPen{ wxColour{208, 226, 249} };
-    static const auto g_light_cyan_brush = wxBrush{ wxColour{208, 226, 249} };
-    if (wxSystemSettings::GetAppearance().IsDark()) {
-        dc.SetPen(g_light_cyan_pen);
+    if (wxSystemSettings::GetAppearance().IsDark() && g_clDarkModeDragBorder.IsOk()) {
+        dc.SetPen(g_clDarkModeDragBorder);
         dc.SetBrush(*wxTRANSPARENT_BRUSH);
     }
     else {
@@ -435,8 +435,8 @@ void wxHeaderCtrl::UpdateReorderingMarker(int xPhysical)
     {
         static const int DROP_MARKER_WIDTH = 4;
 
-        if (wxSystemSettings::GetAppearance().IsDark())
-            dc.SetBrush(g_light_cyan_brush);
+        if (wxSystemSettings::GetAppearance().IsDark() && g_clDarkModeDragBorder.IsOk())
+            dc.SetBrush(g_clDarkModeDragBorder);
         else
             dc.SetBrush(*wxBLUE);
 		if (hover_region == Region::LeftHalf){
@@ -552,7 +552,7 @@ bool wxHeaderCtrl::EndReordering(int xPhysical)
         MoveColumnInOrderArray(new_colIndices, colOld, new_pos);
         auto old_after_pos = new_colIndices.Index(colNew);
         auto new_after_pos = new_colIndices.Index(colOld);
-        if (old_after_pos != old_pos || new_after_pos != new_pos || move_left || old_pos > new_pos){
+        if (static_cast<unsigned>(old_after_pos) != old_pos || static_cast<unsigned>(new_after_pos) != new_pos || move_left || old_pos > new_pos){
             event.SetNewOrder(new_pos);
             
             //printf("Move col %d to %d, pos to %d\n", colOld, colNew, new_pos);

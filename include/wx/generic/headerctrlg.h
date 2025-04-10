@@ -47,6 +47,8 @@ public:
 
     virtual ~wxHeaderCtrl();
 
+    static void    setDarkModeDragBorderColor(wxColor c) { g_clDarkModeDragBorder = c; }
+
 protected:
     virtual wxSize DoGetBestSize() const wxOVERRIDE;
 
@@ -186,6 +188,8 @@ private:
     wxArrayInt m_colIndices;
 
     bool m_wasSeparatorDClick;
+
+    static wxColor g_clDarkModeDragBorder;
 
     wxDECLARE_EVENT_TABLE();
     wxDECLARE_NO_COPY_CLASS(wxHeaderCtrl);

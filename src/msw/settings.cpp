@@ -96,8 +96,18 @@ void wxSystemSettingsModule::OnExit()
 // colours
 // ----------------------------------------------------------------------------
 
+static wxColour* g_aryColorSysSetting = NULL;
+
+void wxSystemSettingsNative::SetCustomSystemColor(wxColor* aryColor)
+{
+    g_aryColorSysSetting = aryColor;
+}
+
 wxColour wxSystemSettingsNative::GetColour(wxSystemColour index)
 {
+    if (g_aryColorSysSetting && index < wxSYS_COLOUR_MAX && g_aryColorSysSetting[index].IsOk())
+        return g_aryColorSysSetting[index];
+
     if ( index == wxSYS_COLOUR_LISTBOXTEXT)
     {
         // there is no standard colour with this index, map to another one
