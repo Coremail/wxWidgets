@@ -1208,10 +1208,10 @@ void DrawButtonFrame(HDC hdc, RECT& rectBtn,
     RECT r;
     ::CopyRect(&r, &rectBtn);
 
-    COLORREF clrBlack = ::GetSysColor(COLOR_3DDKSHADOW),
-             clrGrey = ::GetSysColor(COLOR_3DSHADOW),
-             clrLightGr = ::GetSysColor(COLOR_3DLIGHT),
-             clrWhite = ::GetSysColor(COLOR_3DHILIGHT);
+    COLORREF clrBlack = wxSystemSettings::GetColour(wxSYS_COLOUR_3DDKSHADOW).GetPixel(),   //::GetSysColor(COLOR_3DDKSHADOW)
+        clrGrey = wxSystemSettings::GetColour(wxSYS_COLOUR_3DSHADOW).GetPixel(),   //::GetSysColor(COLOR_3DSHADOW),
+        clrLightGr = wxSystemSettings::GetColour(wxSYS_COLOUR_3DLIGHT).GetPixel(),   //::GetSysColor(COLOR_3DLIGHT),
+        clrWhite = wxSystemSettings::GetColour(wxSYS_COLOUR_3DHILIGHT).GetPixel();   //::GetSysColor(COLOR_3DHILIGHT);
 
     r.right--;
     r.bottom--;
@@ -1438,7 +1438,7 @@ bool wxAnyButton::MSWOnDraw(WXDRAWITEMSTRUCT *wxdis)
     if ( !HasFlag(wxBORDER_NONE) )
     {
 #if wxUSE_UXTHEME
-        if ( wxUxThemeIsActive() )
+        if ( wxUxThemeIsActive() && !wxSystemSettings::GetAppearance().IsDark())
         {
             DrawXPBackground(this, hdc, rectBtn, state);
         }
