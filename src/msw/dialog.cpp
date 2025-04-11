@@ -262,7 +262,7 @@ void wxDialog::ShowGripper(bool show)
     if ( show )
         ResizeGripper();
 
-    ::ShowWindow((HWND)m_hGripper, show ? SW_SHOW : SW_HIDE);
+    ::ShowWindow((HWND)m_hGripper, (show && !wxSystemSettings::GetAppearance().IsDark()) ? SW_SHOW : SW_HIDE);
 }
 
 void wxDialog::ResizeGripper()
