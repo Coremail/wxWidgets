@@ -152,6 +152,9 @@
     #include <sys/sysctl.h>
 #endif
 
+#include <fstream>
+#include <sstream>
+
 // ----------------------------------------------------------------------------
 // conditional compilation
 // ----------------------------------------------------------------------------
@@ -619,6 +622,27 @@ long wxExecute(const char* const* argv, int flags, wxProcess* process,
     wxASSERT_MSG( wxThread::IsMain(),
                     wxT("wxExecute() can be called only from the main thread") );
 #endif // wxUSE_THREADS
+
+    // [zombie-debug] Log entry into wxExecute with the command being run.
+    // This connects the caller (e.g. wxLaunchDefaultApplication) to the
+    // child PID tracking system.
+    {
+        wxString cmd;
+        for ( const char* const* a = argv; *a; ++a )
+        {
+            if ( !cmd.empty() ) cmd += wxT(" ");
+            cmd += wxString::FromAscii(*a);
+        }
+        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+        std::fstream xdg_log("/tmp/wx_execute_log",
+                             std::ios::in | std::ios::out | std::ios::app);
+        auto logger_ = wxLogStream(&xdg_log);
+        wxLog::SetActiveTarget(&logger_);
+        wxLogInfo("wxExecute: dispatching '%s' flags=0x%x %s\n",
+                  cmd, flags, (flags & wxEXEC_SYNC) ? "(sync)" : "(async)");
+        wxLog::SetActiveTarget(nullptr);
+    }
+
     pid_t pid;
 #if defined(__DARWIN__) && !defined(__WXOSX_IPHONE__)
     pid = -1;
@@ -681,6 +705,15 @@ long wxExecute(const char* const* argv, int flags, wxProcess* process,
 #endif
    if ( pid == -1 )     // error?
     {
+        // [zombie-debug] fork failed — no child process created.
+        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+        std::fstream xdg_log("/tmp/wx_execute_log",
+                             std::ios::in | std::ios::out | std::ios::app);
+        auto logger_ = wxLogStream(&xdg_log);
+        wxLog::SetActiveTarget(&logger_);
+        wxLogInfo("wxExecute: fork() FAILED, errno=%d\n", errno);
+        wxLog::SetActiveTarget(nullptr);
+
         wxLogSysError( _("Fork failed") );
 
         return ERROR_RETURN_CODE;
@@ -804,6 +837,15 @@ long wxExecute(const char* const* argv, int flags, wxProcess* process,
     }
     else // we're in parent
     {
+        // [zombie-debug] fork succeeded in parent — record child PID.
+        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+        std::fstream xdg_log("/tmp/wx_execute_log",
+                             std::ios::in | std::ios::out | std::ios::app);
+        auto logger_ = wxLogStream(&xdg_log);
+        wxLog::SetActiveTarget(&logger_);
+        wxLogInfo("wxExecute: fork() succeeded, child PID=%d\n", pid);
+        wxLog::SetActiveTarget(nullptr);
+
         // prepare for IO redirection
 
 #if HAS_PIPE_STREAMS
@@ -871,7 +913,18 @@ long wxExecute(const char* const* argv, int flags, wxProcess* process,
         // For the asynchronous case we don't have to do anything else, just
         // let the process run (if not already finished).
         if ( !(flags & wxEXEC_SYNC) )
+        {
+            // [zombie-debug] Returning async PID to caller — if this child
+            // is never reaped, the bug is downstream in signal handling.
+            (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+            std::fstream xdg_log2("/tmp/wx_execute_log",
+                                  std::ios::in | std::ios::out | std::ios::app);
+            auto logger2_ = wxLogStream(&xdg_log2);
+            wxLog::SetActiveTarget(&logger2_);
+            wxLogInfo("wxExecute: returning async PID %d\n", pid);
+            wxLog::SetActiveTarget(nullptr);
             return pid;
+        }
 
 
         // If we don't need to dispatch any events, things are relatively
@@ -1652,16 +1705,28 @@ bool CheckForChildExit(int pid, int* exitcodeOut)
     wxASSERT_MSG( pid > 0, "invalid PID" );
 
     int status, rc;
-
+    (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+    std::fstream xdg_log("/tmp/wx_execute_log", std::ios::in | std::ios::out | std::ios::app);
+    auto logger_ = wxLogStream(&xdg_log);
+    wxLog::SetActiveTarget(&logger_);
     // loop while we're getting EINTR
     for ( ;; )
     {
+		status = 0;
+		errno = 0;
         rc = waitpid(pid, &status, WNOHANG);
 
-        if ( rc != -1 || errno != EINTR )
+        if ( rc != -1 || errno != EINTR ) {
+            wxLogInfo("CheckForChildExit: waitpid for %d result %d. status %d, errno %d. Break\n", pid, rc, status, errno);
             break;
+        }
+        else
+            wxLogInfo("CheckForChildExit: waitpid for %d result %d. status %d, errno %d. Contiue\n", pid, rc, status, errno);
     }
 
+    logger_.Flush();
+
+    wxLog::SetActiveTarget(nullptr);
     switch ( rc )
     {
         case 0:
@@ -1715,6 +1780,21 @@ void wxExecuteData::OnSomeChildExited(int WXUNUSED(sig))
 
     // Make a copy of the list before iterating over it to avoid problems due
     // to deleting entries from it in the process.
+	
+	(void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+    std::fstream xdg_log("/tmp/wx_execute_log", std::ios::in | std::ios::out | std::ios::app);
+    auto logger_ = wxLogStream(&xdg_log);
+    wxLog::SetActiveTarget(&logger_);
+	
+	auto oss_ = std::ostringstream{};
+	oss_ << '{';
+	for (auto& [pid_, child_data] : ms_childProcesses){
+		oss_ << pid_ << ',';
+	}
+	oss_ << '}';
+	wxLogInfo("wxExecuteData::OnSomeChildExited. Now children are %s\n", oss_.str()); 
+	wxLog::SetActiveTarget(nullptr);
+	
     const ChildProcessesData allChildProcesses = ms_childProcesses;
     for ( ChildProcessesData::const_iterator it = allChildProcesses.begin();
           it != allChildProcesses.end();
@@ -1757,13 +1837,39 @@ void wxExecuteData::OnStart(int pid)
     // Add this object itself to the list of child processes so that
     // we can check for its termination the next time we get SIGCHLD.
     ms_childProcesses[m_pid] = this;
-
+	
+	(void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+    std::fstream xdg_log("/tmp/wx_execute_log", std::ios::in | std::ios::out | std::ios::app);
+    auto logger_ = wxLogStream(&xdg_log);
+    wxLog::SetActiveTarget(&logger_);
+	
+	auto oss_ = std::ostringstream{};
+	oss_ << '{';
+	for (auto& [pid_, child_data] : ms_childProcesses){
+		oss_ << pid_ << ',';
+	}
+	oss_ << '}';
+	wxLogInfo("wxExecuteData::OnStart add new child PID %d. Now children are %s\n", m_pid, oss_.str()); 
+	wxLog::SetActiveTarget(nullptr);
     // However, if the child exited before we finished setting up above,
     // we may have already missed its SIGCHLD.  So we also do an explicit
     // check here before returning.
     int exitcode;
     if ( CheckForChildExit(m_pid, &exitcode) )
     {
+        // [zombie-debug] Race condition: child exited before SIGCHLD handler
+        // was fully set up.  We detected it via this explicit waitpid and
+        // will call OnExit directly.  If we did NOT do this check, the child
+        // would become a zombie because SIGCHLD was already missed.
+        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+        std::fstream xdg_log2("/tmp/wx_execute_log",
+                              std::ios::in | std::ios::out | std::ios::app);
+        auto logger2_ = wxLogStream(&xdg_log2);
+        wxLog::SetActiveTarget(&logger2_);
+        wxLogInfo("wxExecuteData::OnStart: PID %d already exited (race condition), exitcode=%d. Handling inline.\n",
+                  m_pid, exitcode);
+        wxLog::SetActiveTarget(nullptr);
+
         // Handle its termination if it did.
         // This call will implicitly remove it from ms_childProcesses
         // and, if running asynchronously, it will delete itself.
@@ -1778,9 +1884,35 @@ void wxExecuteData::OnExit(int exitcode)
     // if another SIGCHLD happens.
     if ( !ms_childProcesses.erase(m_pid) )
     {
+        // [zombie-debug] PID not found in the tracking map when trying to
+        // remove it.  This indicates a double-exit, tracking corruption, or
+        // that the child was never properly registered — all of which are
+        // direct candidates for zombie processes.
+        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+        std::fstream xdg_log0("/tmp/wx_execute_log",
+                              std::ios::in | std::ios::out | std::ios::app);
+        auto logger0_ = wxLogStream(&xdg_log0);
+        wxLog::SetActiveTarget(&logger0_);
+        wxLogInfo("wxExecuteData::OnExit: WARNING PID %d NOT FOUND in ms_childProcesses during erase! Double-exit or tracking corruption?\n",
+                  m_pid);
+        wxLog::SetActiveTarget(nullptr);
+
         wxFAIL_MSG(wxString::Format(wxS("Data for PID %d not in the list?"), m_pid));
     }
-
+	
+	(void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+    std::fstream xdg_log("/tmp/wx_execute_log", std::ios::in | std::ios::out | std::ios::app);
+    auto logger_ = wxLogStream(&xdg_log);
+    wxLog::SetActiveTarget(&logger_);
+	
+	auto oss_ = std::ostringstream{};
+	oss_ << '{';
+	for (auto& [pid_, child_data] : ms_childProcesses){
+		oss_ << pid_ << ',';
+	}
+	oss_ << '}';
+	wxLogInfo("wxExecuteData::OnExit remove child PID %d. Now children are %s\n", m_pid, oss_.str()); 
+	wxLog::SetActiveTarget(nullptr);
 
     m_exitcode = exitcode;
 

@@ -23,11 +23,50 @@
 
 #include <signal.h>
 #include <unistd.h>
+#include <fcntl.h>
+
+#include <fstream>
 
 #ifndef SA_RESTART
     // don't use for systems which don't define it (at least VMS and QNX)
     #define SA_RESTART 0
 #endif
+
+// ----------------------------------------------------------------------------
+// Async-signal-safe debug logging helper for signal handler context.
+// std::ofstream / wxLog are NOT async-signal-safe and can deadlock if the
+// signal interrupts malloc or stdio holding a lock.  We use write(2) to a
+// pre-opened fd instead.
+// ----------------------------------------------------------------------------
+namespace
+{
+
+// Opens (or re-opens) the debug log file and returns the fd.
+// Async-signal-safe: open(2) is in the POSIX async-signal-safe list.
+int wxDbgGetLogFd()
+{
+    int fd = open("/tmp/wx_execute_log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    return fd;
+}
+
+// Writes a short literal string to the debug log.  async-signal-safe.
+void wxDbgLogSigSafe(const char* msg)
+{
+    if ( !msg )
+        return;
+    int fd = wxDbgGetLogFd();
+    if ( fd >= 0 )
+    {
+        // compute length without strlen (not async-signal-safe on all libc)
+        size_t len = 0;
+        while ( msg[len] ) ++len;
+        (void)write(fd, msg, len);
+        (void)write(fd, "\n", 1);
+        (void)close(fd);
+    }
+}
+
+} // anonymous namespace
 
 // ----------------------------------------------------------------------------
 // Helper class calling CheckSignal() on wake up
@@ -98,9 +137,22 @@ bool wxAppConsole::Initialize(int& argc_, wxChar** argv_)
 // CheckSignal() will be called later from SignalsWakeUpPipe::OnReadWaiting().
 void wxAppConsole::HandleSignal(int signal)
 {
+    // [zombie-debug] Async-signal-safe logging — this is the FIRST link in the
+    // child-reaping chain. If SIGCHLD is never received here, the child will
+    // become a zombie because waitpid() is never called downstream.
+    // We must NOT use wxLog/fstream here (not async-signal-safe).
+    if ( signal == SIGCHLD )
+        wxDbgLogSigSafe("HandleSignal: SIGCHLD received");
+
     wxAppConsole * const app = wxTheApp;
     if ( !app )
+    {
+        // [zombie-debug] wxTheApp is null — SIGCHLD received but no app to
+        // process it, child WILL become a zombie.
+        if ( signal == SIGCHLD )
+            wxDbgLogSigSafe("HandleSignal: SIGCHLD but wxTheApp is NULL!");
         return;
+    }
 
     // Register the signal that is caught.
     sigaddset(&(app->m_signalsCaught), signal);
@@ -114,6 +166,21 @@ void wxAppConsole::HandleSignal(int signal)
 
 void wxAppConsole::CheckSignal()
 {
+    // [zombie-debug] Log whether SIGCHLD is pending in the event-loop dispatch
+    // phase. If HandleSignal logged "SIGCHLD received" but we never reach
+    // here, the event loop is blocked/not running — the child stays a zombie.
+    bool sigchldPending = sigismember(&m_signalsCaught, SIGCHLD) != 0;
+    if ( sigchldPending )
+    {
+        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+        std::fstream xdg_log("/tmp/wx_execute_log",
+                             std::ios::in | std::ios::out | std::ios::app);
+        auto logger_ = wxLogStream(&xdg_log);
+        wxLog::SetActiveTarget(&logger_);
+        wxLogInfo("CheckSignal: SIGCHLD is pending, dispatching handlers\n");
+        wxLog::SetActiveTarget(nullptr);
+    }
+
     for ( SignalHandlerHash::iterator it = m_signalHandlerHash.begin();
           it != m_signalHandlerHash.end();
           ++it )
@@ -173,10 +240,17 @@ bool wxAppConsole::SetSignalHandler(int signal, SignalHandler handler)
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = (SignalHandler_t)&wxAppConsole::HandleSignal;
     sa.sa_flags = SA_RESTART;
+	errno = 0;
     int res = sigaction(signal, &sa, 0);
     if ( res != 0 )
     {
-        wxLogSysError(_("Failed to install signal handler"));
+		(void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+		std::fstream xdg_log("/tmp/wx_execute_log", std::ios::in | std::ios::out | std::ios::app);
+		auto logger_ = wxLogStream(&xdg_log);
+		wxLog::SetActiveTarget(&logger_);
+        //wxLogSysError(_("Failed to install signal handler"));
+		wxLogInfo("wxAppConsole::SetSignalHandler: Failed to install %d signal handler. errno: %d\n", signal, errno);
+		wxLog::SetActiveTarget(nullptr);
         return false;
     }
 

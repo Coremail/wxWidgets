@@ -24,6 +24,8 @@
 #include "wx/apptrait.h"
 #include "wx/private/launchbrowser.h"
 
+#include <fstream>
+
 #ifdef __WXGTK__
 #ifdef __WXGTK20__
 #include "wx/gtk/private/wrapgtk.h"
@@ -2683,6 +2685,19 @@ bool wxLaunchDefaultApplication(const wxString& document, int flags)
 {
     wxUnusedVar(flags);
 
+    // [zombie-debug] Entry log — correlate each launch attempt with the
+    // document being opened, so we can match against child PIDs later.
+    {
+        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+        std::fstream xdg_log("/tmp/wx_execute_log",
+                             std::ios::in | std::ios::out | std::ios::app);
+        auto logger_ = wxLogStream(&xdg_log);
+        wxLog::SetActiveTarget(&logger_);
+        wxLogInfo("wxLaunchDefaultApplication: called for document '%s'\n",
+                  document);
+        wxLog::SetActiveTarget(nullptr);
+    }
+
     // Our best best is to use xdg-open from freedesktop.org cross-desktop
     // compatibility suite xdg-utils
     // (see http://portland.freedesktop.org/wiki/) -- this is installed on
@@ -2696,8 +2711,34 @@ bool wxLaunchDefaultApplication(const wxString& document, int flags)
         argv[0] = xdg_open.fn_str();
         argv[1] = document.fn_str();
         argv[2] = NULL;
-        if (wxExecute(argv))
+
+        // [zombie-debug] Log xdg-open path found and the wxExecute call.
+        long pid = wxExecute(argv);
+
+        {
+            (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+            std::fstream xdg_log2("/tmp/wx_execute_log",
+                                  std::ios::in | std::ios::out | std::ios::app);
+            auto logger2_ = wxLogStream(&xdg_log2);
+            wxLog::SetActiveTarget(&logger2_);
+            wxLogInfo("wxLaunchDefaultApplication: wxExecute returned PID %ld for xdg-open '%s'\n",
+                      pid, xdg_open);
+            wxLog::SetActiveTarget(nullptr);
+        }
+
+        if (pid)
             return true;
+    }
+    else
+    {
+        // [zombie-debug] xdg-open was not found on PATH — nothing was launched.
+        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
+        std::fstream xdg_log3("/tmp/wx_execute_log",
+                              std::ios::in | std::ios::out | std::ios::app);
+        auto logger3_ = wxLogStream(&xdg_log3);
+        wxLog::SetActiveTarget(&logger3_);
+        wxLogInfo("wxLaunchDefaultApplication: xdg-open NOT found on PATH\n");
+        wxLog::SetActiveTarget(nullptr);
     }
 
     return false;
