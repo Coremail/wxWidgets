@@ -71,17 +71,17 @@ wxBitmap wxScreenDCImpl::DoGetAsBitmap(const wxRect *subrect) const
 
     CGImageRef image = NULL;
 
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
-    if ( WX_IS_MACOS_AVAILABLE(14, 4) ) // errors on lower versions of macOS 14
+//#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
+//    if ( WX_IS_MACOS_AVAILABLE(14, 4) ) // errors on lower versions of macOS 14
+//    {
+//        // TODO add ScreenKit implementation
+//    }
+//    else
+//#endif // macOS 10.14+
     {
-        // TODO add ScreenKit implementation
-    }
-    else
-#endif // macOS 10.14+
-    {
-#if __MAC_OS_X_VERSION_MAX_ALLOWED < 150000
+//#if __MAC_OS_X_VERSION_MAX_ALLOWED < 150000
         image = CGDisplayCreateImage(kCGDirectMainDisplay);
-#endif
+//#endif
     }
 
     if ( image != NULL )
