@@ -123,6 +123,31 @@ static gboolean wx_on_channel_event(GIOChannel *channel,
 {
     wxUnusedVar(channel); // Unused if !wxUSE_LOG || !wxDEBUG_LEVEL
 
+    // [zombie-debug] Log EVERY glib dispatch for ANY watched fd, including
+    // the condition bits.  This is the GTK-level counterpart of
+    // SignalsWakeUpPipe::OnReadWaiting: if HandleSignal/WakeUpNoLock logged
+    // but this never fires for the signal pipe fd, the glib watch itself is
+    // gone or the fd is dead.
+    //
+    // G_IO_HUP / G_IO_ERR / G_IO_NVAL here for the signal pipe fd means the
+    // read end was closed (or never valid) - that's the smoking gun for the
+    // "287 SIGCHLDs never dispatched" pattern from the previous logs.
+    {
+        int watchedFd = g_io_channel_unix_get_fd(channel);
+        FILE* dbg = fopen("/tmp/wx_execute_log", "a");
+        if ( dbg )
+        {
+            fprintf(dbg, "wx_on_channel_event: fd=%d condition=%08x%s%s%s%s%s\n",
+                    watchedFd, (unsigned)condition,
+                    (condition & G_IO_IN)   ? " G_IO_IN"   : "",
+                    (condition & G_IO_PRI)  ? " G_IO_PRI"  : "",
+                    (condition & G_IO_HUP)  ? " G_IO_HUP"  : "",
+                    (condition & G_IO_ERR)  ? " G_IO_ERR"  : "",
+                    (condition & G_IO_NVAL) ? " G_IO_NVAL" : "");
+            fclose(dbg);
+        }
+    }
+
     wxLogTrace(wxTRACE_EVT_SOURCE,
                "wx_on_channel_event, fd=%d, condition=%08x",
                g_io_channel_unix_get_fd(channel), condition);
@@ -179,6 +204,20 @@ public:
         // it was ref'd by g_io_add_watch() so we can unref it here
         g_io_channel_unref(channel);
 
+        // [zombie-debug] Log every glib watch registration with its id, so
+        // we can correlate later watch removals and callback dispatches.
+        {
+            FILE* dbg = fopen("/tmp/wx_execute_log", "a");
+            if ( dbg )
+            {
+                fprintf(dbg,
+                        "AddSourceForFD: glib watch added, fd=%d sourceId=%u condition=%08x%s\n",
+                        fd, sourceId, condition,
+                        sourceId ? "" : " (FAILED!)");
+                fclose(dbg);
+            }
+        }
+
         if ( !sourceId )
             return NULL;
 
@@ -200,6 +239,21 @@ wxEventLoopSourcesManagerBase* wxGUIAppTraits::GetEventLoopSourcesManager()
 
 wxGTKEventLoopSource::~wxGTKEventLoopSource()
 {
+    // [zombie-debug] Log every glib watch removal with its id.  If the watch
+    // for the signal pipe fd (see SignalsWakeUpPipe creation log) is removed
+    // while the app is still running, all subsequent SIGCHLD wake-ups are
+    // silently lost -> tracked children become zombies.  This catches the
+    // "source deleted/detached from context" hypothesis.
+    {
+        FILE* dbg = fopen("/tmp/wx_execute_log", "a");
+        if ( dbg )
+        {
+            fprintf(dbg, "wxGTKEventLoopSource DTOR: g_source_remove sourceId=%u\n",
+                    m_sourceId);
+            fclose(dbg);
+        }
+    }
+
     wxLogTrace(wxTRACE_EVT_SOURCE,
                "Removing event loop source with GTK id=%u", m_sourceId);
 

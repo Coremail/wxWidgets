@@ -25,48 +25,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <fstream>
+// [zombie-debug] shared logging helpers (async-signal-safe + wxLog-based)
+#include "wx/unix/private/zombiedebug.h"
 
 #ifndef SA_RESTART
     // don't use for systems which don't define it (at least VMS and QNX)
     #define SA_RESTART 0
 #endif
-
-// ----------------------------------------------------------------------------
-// Async-signal-safe debug logging helper for signal handler context.
-// std::ofstream / wxLog are NOT async-signal-safe and can deadlock if the
-// signal interrupts malloc or stdio holding a lock.  We use write(2) to a
-// pre-opened fd instead.
-// ----------------------------------------------------------------------------
-namespace
-{
-
-// Opens (or re-opens) the debug log file and returns the fd.
-// Async-signal-safe: open(2) is in the POSIX async-signal-safe list.
-int wxDbgGetLogFd()
-{
-    int fd = open("/tmp/wx_execute_log", O_WRONLY | O_CREAT | O_APPEND, 0644);
-    return fd;
-}
-
-// Writes a short literal string to the debug log.  async-signal-safe.
-void wxDbgLogSigSafe(const char* msg)
-{
-    if ( !msg )
-        return;
-    int fd = wxDbgGetLogFd();
-    if ( fd >= 0 )
-    {
-        // compute length without strlen (not async-signal-safe on all libc)
-        size_t len = 0;
-        while ( msg[len] ) ++len;
-        (void)write(fd, msg, len);
-        (void)write(fd, "\n", 1);
-        (void)close(fd);
-    }
-}
-
-} // anonymous namespace
 
 // ----------------------------------------------------------------------------
 // Helper class calling CheckSignal() on wake up
@@ -81,26 +46,58 @@ public:
     // Ctor automatically registers this pipe with the event loop.
     SignalsWakeUpPipe()
     {
+        // [zombie-debug] Log the pipe creation and its fd.  If the fd is
+        // later closed externally, this is our baseline to detect it.
+        wxZombieDbgLog("SignalsWakeUpPipe: created, read fd=%d",
+                       GetReadFd());
+
         m_source = wxEventLoopBase::AddSourceForFD
                                     (
                                         GetReadFd(),
                                         this,
                                         wxEVENT_SOURCE_INPUT
                                     );
+
+        // [zombie-debug] Log whether source registration succeeded.  If this
+        // fails, SIGCHLD wake-ups are NEVER dispatched -> guaranteed zombies.
+        if ( !m_source )
+            wxZombieDbgLog("SignalsWakeUpPipe: ERROR AddSourceForFD FAILED for fd=%d!",
+                           GetReadFd());
+        else
+            wxZombieDbgLog("SignalsWakeUpPipe: source registered OK for fd=%d",
+                           GetReadFd());
     }
 
     virtual void OnReadWaiting() wxOVERRIDE
     {
+        // [zombie-debug] This is the CRITICAL dispatch point that was silent
+        // in the previous logs: if SIGCHLD was received (HandleSignal logged)
+        // but this function never logs, the event loop is not dispatching
+        // the wake-up pipe watch (source removed / fd closed / glib watch
+        // broken).  Log fd validity too: if fd became invalid (e.g. closed
+        // and reused by other code), that's the root cause.
+        int fd = GetReadFd();
+        int ncmd = fcntl(fd, F_GETFD);
+        wxZombieDbgLog("SignalsWakeUpPipe::OnReadWaiting: entered, read fd=%d (fcntl F_GETFD=%d)",
+                       fd, ncmd);
+
         // The base class wxWakeUpPipe::OnReadWaiting() needs to be called in order
         // to read the data out of the wake up pipe and clear it for next time.
         wxWakeUpPipe::OnReadWaiting();
 
         if ( wxTheApp )
             wxTheApp->CheckSignal();
+        else
+            wxZombieDbgLog("SignalsWakeUpPipe::OnReadWaiting: wxTheApp is NULL, CheckSignal skipped");
     }
 
     virtual ~SignalsWakeUpPipe()
     {
+        // [zombie-debug] Log destruction: if this fires before the children
+        // were reaped, the SIGCHLD watch is gone -> remaining tracked children
+        // become zombies.
+        wxZombieDbgLog("SignalsWakeUpPipe: DESTROYED (deleting source), read fd=%d",
+                       GetReadFd());
         delete m_source;
     }
 
@@ -142,7 +139,7 @@ void wxAppConsole::HandleSignal(int signal)
     // become a zombie because waitpid() is never called downstream.
     // We must NOT use wxLog/fstream here (not async-signal-safe).
     if ( signal == SIGCHLD )
-        wxDbgLogSigSafe("HandleSignal: SIGCHLD received");
+        wxZombieDbgLogSigSafe("HandleSignal: SIGCHLD received");
 
     wxAppConsole * const app = wxTheApp;
     if ( !app )
@@ -150,7 +147,7 @@ void wxAppConsole::HandleSignal(int signal)
         // [zombie-debug] wxTheApp is null — SIGCHLD received but no app to
         // process it, child WILL become a zombie.
         if ( signal == SIGCHLD )
-            wxDbgLogSigSafe("HandleSignal: SIGCHLD but wxTheApp is NULL!");
+            wxZombieDbgLogSigSafe("HandleSignal: SIGCHLD but wxTheApp is NULL!");
         return;
     }
 
@@ -166,19 +163,22 @@ void wxAppConsole::HandleSignal(int signal)
 
 void wxAppConsole::CheckSignal()
 {
-    // [zombie-debug] Log whether SIGCHLD is pending in the event-loop dispatch
-    // phase. If HandleSignal logged "SIGCHLD received" but we never reach
-    // here, the event loop is blocked/not running — the child stays a zombie.
+    // [zombie-debug] Log both branches here:
+    //  - SIGCHLD pending -> normal dispatch (chain works up to here)
+    //  - called but NOTHING pending -> OnReadWaiting fired for a reason other
+    //    than SIGCHLD (spurious wake-up, or a signal got lost between the
+    //    handler setting the flag and this call - e.g. handler ran on a
+    //    different app object).  Distinguishing these narrows the root cause.
     bool sigchldPending = sigismember(&m_signalsCaught, SIGCHLD) != 0;
+    bool hasHandler = m_signalHandlerHash.find(SIGCHLD) != m_signalHandlerHash.end();
     if ( sigchldPending )
     {
-        (void) std::ofstream("/tmp/wx_execute_log", std::ios::app);
-        std::fstream xdg_log("/tmp/wx_execute_log",
-                             std::ios::in | std::ios::out | std::ios::app);
-        auto logger_ = wxLogStream(&xdg_log);
-        wxLog::SetActiveTarget(&logger_);
-        wxLogInfo("CheckSignal: SIGCHLD is pending, dispatching handlers\n");
-        wxLog::SetActiveTarget(nullptr);
+        wxZombieDbgLog("CheckSignal: SIGCHLD is pending, dispatching handlers");
+    }
+    else if ( hasHandler )
+    {
+        wxZombieDbgLog("CheckSignal: called but SIGCHLD NOT pending (spurious wake-up or flag lost?), handler registered=%d",
+                       hasHandler ? 1 : 0);
     }
 
     for ( SignalHandlerHash::iterator it = m_signalHandlerHash.begin();
