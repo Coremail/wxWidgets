@@ -34,6 +34,9 @@
 
 #include "wx/gtk/private/wrapgtk.h"
 
+// [zombie-debug] shared logging helper
+#include "wx/unix/private/zombiedebug.h"
+
 #include <dlfcn.h>
 #include <link.h>
 
@@ -47,14 +50,50 @@ GdkWindow* wxGetTopLevelGDK();
 // wxEventLoop running and exiting
 // ----------------------------------------------------------------------------
 
+namespace
+{
+
+// [zombie-debug] Heartbeat callback: runs from the DEFAULT GMainContext
+// iteration itself.  If these lines stop appearing in the debug log while
+// the app is still running, the default context is not being iterated
+// anymore - which is exactly the zombie xdg-open signature we diagnosed
+// (the signal wake-up pipe had a pending byte for 14h without ever being
+// dispatched).
+extern "C" gboolean wx_zombie_dbg_heartbeat(gpointer)
+{
+    wxZombieDbgLog("GlibHeartbeat: default context iterated, gtk_main_level=%d",
+                   (int)gtk_main_level());
+    return TRUE; // keep firing
+}
+
+} // anonymous namespace
+
 wxGUIEventLoop::wxGUIEventLoop()
 {
     m_exitcode = 0;
+
+    // [zombie-debug] Install the heartbeat exactly once (nested event loops
+    // create additional wxGUIEventLoop objects but we only need one source,
+    // attached to the default context for the whole process lifetime).
+    static bool s_heartbeatInstalled = false;
+    if ( !s_heartbeatInstalled )
+    {
+        s_heartbeatInstalled = true;
+        g_timeout_add_seconds(30, wx_zombie_dbg_heartbeat, nullptr);
+        wxZombieDbgLog("GlibHeartbeat: heartbeat source installed (30s interval)");
+    }
 }
 
 int wxGUIEventLoop::DoRun()
 {
     guint loopLevel = gtk_main_level();
+
+    // [zombie-debug] Log event loop entry: if we see this for the OUTER loop
+    // and then never see its exit log, the loop was stuck inside gtk_main()
+    // or inside a handler (e.g. the app's CEF pump).  If we see the exit log
+    // of the outermost loop without a subsequent entry log, gtk_main was
+    // never re-entered - events would be pumped by something else.
+    wxZombieDbgLog("wxGUIEventLoop::DoRun: enter, gtk_main_level=%u", loopLevel);
 
     // This is placed inside of a loop to take into account nested
     // event loops.  For example, inside this event loop, we may receive
@@ -84,6 +123,11 @@ int wxGUIEventLoop::DoRun()
     if ( wxTheApp )
         wxTheApp->RethrowStoredException();
 #endif // wxUSE_EXCEPTIONS
+
+    // [zombie-debug] Log event loop exit with the level AFTER gtk_main
+    // returned - shows whether we were nested when we exited.
+    wxZombieDbgLog("wxGUIEventLoop::DoRun: exit, gtk_main_level=%u",
+                   gtk_main_level());
 
     return m_exitcode;
 }

@@ -75,13 +75,30 @@ void wxWakeUpPipe::WakeUpNoLock()
     // This runs in SIGNAL HANDLER context (from wxAppConsole::HandleSignal),
     // so we must use the async-signal-safe logger only.
     //
-    // The m_pipeIsEmpty short-circuit below is a key diagnostic: when the
-    // event loop stops draining the pipe (OnReadWaiting never called), this
-    // flag stays false and ALL subsequent SIGCHLD wake-ups are silently
-    // skipped.  The previous logs showed 287 SIGCHLDs with the pipe stuck
-    // in exactly this state.
-    if ( !m_pipeIsEmpty )
+    // Note: the signal handler may run on a SECONDARY thread (SIGCHLD is
+    // process-directed and is delivered to any thread not blocking it, e.g.
+    // CEF/boost worker threads), so this can execute truly concurrently with
+    // OnReadWaiting() on the main thread. The claim-before-write exchange
+    // below is what makes that safe (see the comment in wakeuppipe.h).
+
+    // Atomically claim the "pipe not empty" state BEFORE writing, by
+    // exchanging the flag to false ("not empty"). The exchange returns the
+    // previous value: if it was true ("empty"), we won the claim and must
+    // perform the write; if it was false, a wake-up byte is already pending
+    // (or being written by another signal handler) and we can skip.
+    //
+    // This claim-before-write ordering is what makes the concurrent signal
+    // handler (which may run on a secondary thread, see the header comment)
+    // safe: the flag can never be left at "not empty" while the pipe is
+    // actually empty. In the worst interleaving the main thread's drain
+    // resets the flag while our byte has not been written yet - then our
+    // byte simply lands in an already-"empty" pipe, costing at most one
+    // stale byte and one extra spurious wake-up later (harmless, the drain
+    // loop handles it), but never a permanently lost wake-up.
+    if ( !m_pipeIsEmpty.exchange(false) )
     {
+        // [zombie-debug] pipe already claimed non-empty: a wake-up byte is
+        // pending (or being written), nothing to do.
         wxZombieDbgLogSigSafe("WakeUpNoLock: SKIP write, pipe not empty (previous byte never read by event loop)");
         return;
     }
@@ -91,6 +108,10 @@ void wxWakeUpPipe::WakeUpNoLock()
     {
         // [zombie-debug] Preserve errno before calling any logging function.
         const int savedErrno = errno;
+
+        // The write failed, so undo our claim ("empty" again) to let a later
+        // call retry.
+        m_pipeIsEmpty.store(true);
 
         // don't use wxLog here, we can be in another thread and this could
         // result in dead locks
@@ -107,8 +128,8 @@ void wxWakeUpPipe::WakeUpNoLock()
     }
     else
     {
-        // We just wrote to it, so it's not empty any more.
-        m_pipeIsEmpty = false;
+        // We just wrote to it, so it's not empty any more - and this was
+        // already recorded by our claim above.
         wxZombieDbgLogSigSafe("WakeUpNoLock: wrote wake-up byte OK");
     }
 }
@@ -162,7 +183,16 @@ void wxWakeUpPipe::OnReadWaiting()
 
     // The pipe is empty now, so future calls to WakeUp() would need to write
     // to it again.
-    m_pipeIsEmpty = true;
+    //
+    // Plain store, NOT exchange: if a signal handler on another thread
+    // claimed the flag concurrently (exchange(true) in WakeUpNoLock) but
+    // hasn't written its byte yet, we overwrite the claim with "empty" here.
+    // That handler's byte will then arrive in an already-"empty" pipe,
+    // producing at most one stale byte / one extra spurious wake-up later
+    // (harmless - level-triggered dispatch handles it) - crucially it can
+    // NEVER produce the inverse (flag stuck at "not empty" with an empty
+    // pipe), which was the permanent-wedge zombie bug.
+    m_pipeIsEmpty.store(true);
 
     // [zombie-debug] Confirm the pipe was drained and wake-ups re-enabled.
     if ( totalDrained > 0 )
